@@ -192,43 +192,108 @@ kubectl get configmap linkerd-identity-trust-roots -n linkerd
 | `secret/data/linkerd` | `license` | Linkerd control plane, Buoyant operator |
 | `secret/data/linkerd-buoyant` | `client_id`, `client_secret` | Buoyant Cloud registration |
 
-## Certificate Chain
+## Certificates
 
-cert-manager manages the full Linkerd certificate lifecycle:
+cert-manager manages the entire Linkerd mTLS and webhook certificate lifecycle. All certificates are defined in `overlays/linkerd/certificates/` and deployed by the `linkerd-certs` Flux Kustomization stage, which runs before the Linkerd control plane.
 
-- **Trust anchor** (`ca.yaml`) -- self-signed root CA, 365-day validity, auto-rotated
-- **Identity issuer** (`identity.yaml`) -- intermediate CA for mTLS identity, 48h validity
-- **Trust bundle** (`bundle.yaml`) -- distributes the root CA to namespaces labeled `linkerd.io/is-control-plane: "true"`
-- **Webhook CA** (`webhook.yaml`) -- self-signed CA for admission webhooks
-- **Webhook certificates** (`webhook.yaml`) -- short-lived certs (24h) for policy-validator, proxy-injector, and sp-validator
+### Certificate Chain
 
-## Troubleshooting
+```
+linkerd-trust-root-issuer (SelfSigned, cert-manager ns)
+    └── linkerd-trust-anchor (root CA)
+            ├── linkerd-identity-issuer (ClusterIssuer, CA)
+            │       └── linkerd-identity-issuer (intermediate CA, linkerd ns)
+            └── trust-manager Bundle → linkerd-identity-trust-roots ConfigMap
 
-**linkerd-control-plane HelmRelease stuck in Failed state**
-
-If the control plane install times out (e.g. due to slow image pulls on first deploy), reset the retry counter:
-
-```bash
-flux suspend helmrelease linkerd-control-plane -n linkerd
-flux resume helmrelease linkerd-control-plane -n linkerd
+webhook-issuer-selfsigned (SelfSigned, linkerd ns)
+    └── webhook-issuer-ca (CA)
+            └── webhook-issuer (Issuer, CA)
+                    ├── linkerd-policy-validator
+                    ├── linkerd-proxy-injector
+                    └── linkerd-sp-validator
 ```
 
-**Pods stuck in Init or CrashLoopBackOff after trust bundle fix**
+### Trust Anchor (Root CA)
 
-If pods were created before the `linkerd-identity-trust-roots` ConfigMap existed, restart them:
+| | |
+|---|---|
+| **File** | `ca.yaml` |
+| **Issuer** | `linkerd-trust-root-issuer` (SelfSigned) |
+| **Certificate** | `linkerd-trust-anchor` |
+| **Namespace** | `cert-manager` |
+| **CN** | `root.linkerd.cluster.local` |
+| **Duration** | 365 days |
+| **Renew Before** | 305 days |
+| **Algorithm** | ECDSA |
+| **Secret** | `linkerd-trust-anchor` (kubernetes.io/tls) |
 
-```bash
-kubectl rollout restart deployment -n linkerd linkerd-identity linkerd-destination linkerd-proxy-injector
-```
+This is the root of the trust chain. cert-manager auto-rotates it, and the `rotationPolicy: Always` ensures a new private key is generated on each renewal.
 
-**ExternalSecrets not syncing**
+### Identity Issuer (Intermediate CA)
 
-Check that Vault has the secrets and the ClusterSecretStore is healthy:
+| | |
+|---|---|
+| **File** | `identity.yaml` |
+| **Issuer** | `linkerd-identity-issuer` (ClusterIssuer, signed by trust anchor) |
+| **Certificate** | `linkerd-identity-issuer` |
+| **Namespace** | `linkerd` |
+| **CN** | `identity.linkerd.cluster.local` |
+| **Duration** | 48 hours |
+| **Renew Before** | 25 hours |
+| **Algorithm** | ECDSA |
+| **Secret** | `linkerd-identity-issuer` (kubernetes.io/tls) |
 
-```bash
-kubectl get clustersecretstore vault-backend
-kubectl get externalsecrets --all-namespaces
-```
+This intermediate CA is what the Linkerd identity controller uses to issue mTLS certificates to proxies. Its short lifetime (48h) limits the blast radius of a key compromise.
+
+### Trust Bundle
+
+| | |
+|---|---|
+| **File** | `bundle.yaml` |
+| **Kind** | trust-manager `Bundle` (cluster-scoped) |
+| **Source** | `linkerd-trust-anchor` secret (`tls.crt`) in `cert-manager` namespace |
+| **Target** | `linkerd-identity-trust-roots` ConfigMap (`ca-bundle.crt`) |
+| **Distributed to** | Namespaces with label `linkerd.io/is-control-plane: "true"` |
+
+trust-manager watches the root CA secret and distributes its public certificate as a ConfigMap to the Linkerd control plane namespace. This ConfigMap is mounted by all control plane pods as the trust root for proxy mTLS verification.
+
+### Webhook Certificates
+
+| | |
+|---|---|
+| **File** | `webhook.yaml` |
+| **Root Issuer** | `webhook-issuer-selfsigned` (SelfSigned) |
+| **CA Certificate** | `webhook-issuer-ca` → secret `webhook-issuer-tls` |
+| **Leaf Issuer** | `webhook-issuer` (CA, signed by `webhook-issuer-tls`) |
+| **Namespace** | `linkerd` |
+| **Duration** | 24 hours |
+| **Renew Before** | 1 hour |
+| **Algorithm** | ECDSA |
+
+Three leaf certificates are issued for the Linkerd admission webhooks:
+
+| Certificate | Secret | DNS SAN |
+|---|---|---|
+| `linkerd-policy-validator` | `linkerd-policy-validator-k8s-tls` | `linkerd-policy-validator.linkerd.svc` |
+| `linkerd-proxy-injector` | `linkerd-proxy-injector-k8s-tls` | `linkerd-proxy-injector.linkerd.svc` |
+| `linkerd-sp-validator` | `linkerd-sp-validator-k8s-tls` | `linkerd-sp-validator.linkerd.svc` |
+
+These are short-lived (24h) server certificates used by Kubernetes to authenticate webhook endpoints. The Linkerd control plane Helm values reference them via `externalSecret: true` and `injectCaFrom`.
+
+### Rotation
+
+All certificates are automatically rotated by cert-manager before expiry:
+
+| Certificate | Lifetime | Renews At |
+|---|---|---|
+| Trust anchor (root CA) | 365 days | 60 days remaining |
+| Identity issuer (intermediate) | 48 hours | 23 hours remaining |
+| Webhook CA | 365 days | 60 days remaining |
+| Webhook leaf certs | 24 hours | 1 hour remaining |
+
+The identity issuer and webhook certificates rotate automatically with no manual intervention — cert-manager renews them and the control plane picks up the new secrets transparently.
+
+**Trust anchor rotation requires manual steps.** Rotating the root CA involves restarting the control plane and all data plane proxies in a coordinated sequence. See the [Linkerd trust anchor rotation guide](https://linkerd.io/2-edge/tasks/automatically-rotating-control-plane-tls-credentials/#9-rotating-the-trust-anchor) for the full procedure.
 
 ## Cleanup
 
