@@ -1,0 +1,92 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: linkerd-crds
+  namespace: linkerd
+spec:
+  chart:
+    spec:
+      chart: linkerd-enterprise-crds
+      reconcileStrategy: ChartVersion
+      sourceRef:
+        kind: HelmRepository
+        name: linkerd
+      version: "2.15.2"
+  interval: 15m0s
+  dependsOn:
+  - name: linkerd-buoyant
+    namespace: linkerd-buoyant
+  - name: trust-manager
+    namespace: cert-manager
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: linkerd-control-plane
+  namespace: linkerd
+spec:
+  install:
+    createNamespace: false
+  chart:
+    spec:
+      chart: linkerd-enterprise-control-plane
+      reconcileStrategy: ChartVersion
+      sourceRef:
+        kind: HelmRepository
+        name: linkerd
+      version: "2.15.2"
+  interval: 15m0s
+  dependsOn:
+  - name: linkerd-crds
+    namespace: linkerd
+  values:
+    licenseSecret: vss-linkerd-license
+    linkerd-control-plane:
+      controllerReplicas: 3
+      identity:
+        externalCA: true
+        issuer:
+          scheme: kubernetes.io/tls 
+        additionalEnv: 
+          - name: LICENSE
+            valueFrom:
+              secretKeyRef:
+                key: license
+                name: vss-linkerd-license
+      destinationController:
+        additionalEnv:
+          - name: LICENSE
+            valueFrom:
+              secretKeyRef:
+                key: license
+                name: vss-linkerd-license
+      heartbeat:
+        additionalEnv:
+          - name: LICENSE
+            valueFrom:
+              secretKeyRef:
+                key: license
+                name: vss-linkerd-license
+      policyValidator:
+        externalSecret: true
+        injectCaFrom: linkerd/linkerd-policy-validator
+      profileValidator:
+        externalSecret: true
+        injectCaFrom: linkerd/linkerd-sp-validator
+      proxyInjector:
+        externalSecret: true
+        injectCaFrom: linkerd/linkerd-proxy-injector
+        additionalEnv:
+          - name: LICENSE
+            valueFrom:
+              secretKeyRef:
+                key: license
+                name: vss-linkerd-license
+      spValidator:
+        additionalEnv:
+          - name: LICENSE
+            valueFrom:
+              secretKeyRef:
+                key: license
+                name: vss-linkerd-license

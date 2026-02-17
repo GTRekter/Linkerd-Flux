@@ -1,0 +1,8 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: cert-manager
+spec:
+  type: helm
+  lifecycle: production
+  owner: SRE

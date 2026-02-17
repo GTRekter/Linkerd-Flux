@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: linkerd-buoyant
+  labels:
+    linkerd.io/extension: buoyant
+    app.kubernetes.io/part-of: linkerd-buoyant

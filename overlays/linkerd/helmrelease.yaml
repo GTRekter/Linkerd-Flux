@@ -1,0 +1,38 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: linkerd-crds
+  namespace: linkerd
+spec:
+  chart:
+    spec:
+      version: "2.15.2"
+      chart: linkerd-enterprise-crds
+      sourceRef:
+        kind: HelmRepository
+        name: linkerd
+  interval: 15m0s
+  values:
+    linkerd-control-plane:
+      proxy:
+        disableInboundProtocolDetectTimeout: true
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: linkerd-control-plane
+  namespace: linkerd
+spec:
+  chart:
+    spec:
+      chart: linkerd-enterprise-control-plane
+      version: "2.15.2"
+      sourceRef:
+        kind: HelmRepository
+        name: linkerd
+  interval: 15m0s
+  values:
+    linkerd-control-plane:
+      proxy:
+        disableInboundProtocolDetectTimeout: true

@@ -1,0 +1,14 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: linkerd-buoyant
+  namespace: linkerd-buoyant
+spec:
+  chart:
+    spec:
+      version: "0.30"
+  interval: 15m0s
+  values:
+    metadata:
+      agentName: k3d-01-flux
