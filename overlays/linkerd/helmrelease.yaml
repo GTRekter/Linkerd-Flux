@@ -14,9 +14,7 @@ spec:
         name: linkerd
   interval: 15m0s
   values:
-    linkerd-control-plane:
-      proxy:
-        disableInboundProtocolDetectTimeout: true
+    manageExternalWorkloads: true 
 ---
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
@@ -34,5 +32,9 @@ spec:
   interval: 15m0s
   values:
     linkerd-control-plane:
+      policyController:
+        logLevel: debug
+      destinationController:
+        logLevel: debug
       proxy:
-        disableInboundProtocolDetectTimeout: true
+        logLevel: "debug,linkerd=debug,hickory=error,linkerd_balancer=trace"
