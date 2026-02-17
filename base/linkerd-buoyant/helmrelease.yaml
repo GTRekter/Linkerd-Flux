@@ -7,6 +7,11 @@ metadata:
 spec:
   install:
     createNamespace: false
+    remediation:
+      retries: -1
+  upgrade:
+    remediation:
+      retries: -1
   chart:
     spec:
       chart: linkerd-buoyant

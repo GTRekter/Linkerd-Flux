@@ -14,41 +14,48 @@ GitOps deployment of Linkerd Enterprise with Flux, cert-manager, and External Se
 
 ## Architecture
 
+Flux deploys components in stages using Kustomizations with `dependsOn` chains:
+
 ```
-vault (in-cluster, dev mode)
-    |
-external-secrets (ESO)
-    |
-cert-manager
-    ├── cert-manager (v1.11.5)
-    └── trust-manager (v0.4.0)
-    |
-linkerd-buoyant (v0.30)
-    |
-linkerd
-    ├── linkerd-enterprise-crds (v2.15.2)
-    └── linkerd-enterprise-control-plane (v2.15.2)
+vault → external-secrets → external-secrets-config ─┬─→ linkerd-buoyant
+                                                    └─→ linkerd
+cert-manager → linkerd-certs ─────────────────────────→ linkerd
 ```
 
-Vault runs inside the cluster in dev mode. The External Secrets Operator connects to it via the in-cluster service (`vault.vault.svc.cluster.local:8200`) using a static root token, and syncs secrets into Kubernetes Secrets. No plaintext credentials are stored in Git.
+`linkerd-buoyant` and `linkerd` deploy in parallel at the Flux level. The HelmRelease-level `dependsOn` inside `base/linkerd/helmrelease.yaml` ensures the correct ordering between Helm charts (e.g. `linkerd-crds` waits for `linkerd-buoyant` and `trust-manager`).
+
+| Stage | Component | Chart Version |
+|---|---|---|
+| vault | HashiCorp Vault (dev mode) | 0.28.1 |
+| external-secrets | External Secrets Operator | 0.9.13 |
+| external-secrets-config | ClusterSecretStore + Vault token | -- |
+| cert-manager | cert-manager + trust-manager | 1.11.5 / 0.4.0 |
+| linkerd-certs | CA, identity issuer, trust bundle, webhooks | -- |
+| linkerd-buoyant | Buoyant Cloud operator | 0.30 |
+| linkerd | Linkerd Enterprise CRDs + control plane | 2.15.2 |
+
+Secrets are managed via the External Secrets Operator, which pulls them from the in-cluster Vault (`vault.vault.svc.cluster.local:8200`) into Kubernetes Secrets at runtime. No plaintext credentials are stored in Git.
 
 ## Repository Structure
 
 ```
 .
 ├── base/
-│   ├── cert-manager/          # cert-manager + trust-manager
-│   ├── external-secrets/      # External Secrets Operator
-│   ├── linkerd/               # Linkerd Enterprise CRDs + control plane
-│   ├── linkerd-buoyant/       # Buoyant Cloud operator
-│   └── vault/                 # HashiCorp Vault (dev mode)
+│   ├── cert-manager/              # cert-manager + trust-manager
+│   ├── external-secrets/          # External Secrets Operator
+│   ├── linkerd/                   # Linkerd Enterprise CRDs + control plane
+│   ├── linkerd-buoyant/           # Buoyant Cloud operator
+│   └── vault/                     # HashiCorp Vault (dev mode)
 └── overlays/
-    ├── cert-manager/          # Env-specific patches
-    ├── external-secrets/      # ClusterSecretStore + Vault token
-    ├── linkerd/               # Certificates, Flux Kustomization, patches
-    │   └── certificates/      # CA, identity issuer, trust bundle, webhooks
-    ├── linkerd-buoyant/       # Version override, agent name
-    └── vault/                 # Vault overlay
+    ├── flux-kustomizations.yaml   # Staged Flux Kustomizations with dependsOn
+    ├── kustomization.yaml         # Top-level entry point
+    ├── cert-manager/              # Env-specific patches (node selectors, tolerations)
+    ├── external-secrets/
+    │   └── config/                # ClusterSecretStore + Vault token
+    ├── linkerd/
+    │   └── certificates/          # CA, identity issuer, trust bundle, webhooks
+    ├── linkerd-buoyant/           # Version override, agent name
+    └── vault/                     # Vault overlay
 ```
 
 ## Setup
@@ -89,19 +96,19 @@ flux bootstrap github \
   --personal
 ```
 
-This installs Flux and configures it to reconcile all manifests from the `overlays/` directory. Flux will deploy Vault, ESO, cert-manager, and Linkerd in the correct order based on their `dependsOn` chains.
+This installs Flux and configures it to reconcile the staged Kustomizations defined in `overlays/flux-kustomizations.yaml`. Each stage waits for its dependencies to be healthy before proceeding.
 
-### 3. Wait for Vault to be ready
+Flux will immediately begin deploying all components. The `linkerd-buoyant` and `linkerd` stages will fail initially because the Vault secrets don't exist yet — this is expected. Both are configured with unlimited retries (`remediation.retries: -1`) and will automatically recover once you seed the secrets in the next step.
 
-Vault is deployed automatically by Flux. Wait for the pod to be running:
+### 3. Seed secrets into Vault
+
+Wait for the Vault pod to be ready:
 
 ```bash
 kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=vault -n vault --timeout=120s
 ```
 
-### 4. Seed secrets into Vault
-
-Once Vault is running, use `kubectl exec` to populate it with the required secrets:
+Populate Vault with the required secrets:
 
 ```bash
 kubectl exec -n vault vault-0 -- vault kv put secret/linkerd \
@@ -112,7 +119,7 @@ kubectl exec -n vault vault-0 -- vault kv put secret/linkerd-buoyant \
   client_secret="<YOUR_BUOYANT_CLIENT_SECRET>"
 ```
 
-After seeding, trigger ESO to reconcile the ExternalSecrets:
+The ExternalSecrets refresh every hour by default. To sync immediately:
 
 ```bash
 kubectl annotate externalsecret -n linkerd linkerd-license force-sync=$(date +%s) --overwrite
@@ -120,12 +127,27 @@ kubectl annotate externalsecret -n linkerd-buoyant linkerd-license force-sync=$(
 kubectl annotate externalsecret -n linkerd-buoyant buoyant-cloud-credentials force-sync=$(date +%s) --overwrite
 ```
 
-### 5. Verify the deployment
+The HelmReleases will automatically retry and succeed once the secrets are available.
 
-Watch Flux reconcile the resources:
+### 4. Verify the deployment
+
+Watch Flux reconcile all stages:
 
 ```bash
 flux get kustomizations --watch
+```
+
+All stages should show `Ready: True`:
+
+```
+NAME                    READY   MESSAGE
+vault                   True    Applied revision: main@sha1:...
+external-secrets        True    Applied revision: main@sha1:...
+external-secrets-config True    Applied revision: main@sha1:...
+cert-manager            True    Applied revision: main@sha1:...
+linkerd-certs           True    Applied revision: main@sha1:...
+linkerd-buoyant         True    Applied revision: main@sha1:...
+linkerd                 True    Applied revision: main@sha1:...
 ```
 
 Check individual components:
@@ -138,9 +160,10 @@ kubectl get pods -n vault
 kubectl get pods -n external-secrets
 kubectl get externalsecrets --all-namespaces
 
-# cert-manager
+# cert-manager + certificates
 kubectl get pods -n cert-manager
 kubectl get certificates --all-namespaces
+kubectl get bundle linkerd-identity-trust-roots
 
 # Linkerd
 kubectl get pods -n linkerd-buoyant
@@ -156,6 +179,12 @@ kubectl get secrets -n linkerd-buoyant vss-linkerd-license
 kubectl get secrets -n linkerd-buoyant buoyant-cloud-org-credentials
 ```
 
+Verify the trust bundle ConfigMap was distributed:
+
+```bash
+kubectl get configmap linkerd-identity-trust-roots -n linkerd
+```
+
 ## Vault Secret Paths
 
 | Vault Path | Keys | Used By |
@@ -169,8 +198,37 @@ cert-manager manages the full Linkerd certificate lifecycle:
 
 - **Trust anchor** (`ca.yaml`) -- self-signed root CA, 365-day validity, auto-rotated
 - **Identity issuer** (`identity.yaml`) -- intermediate CA for mTLS identity, 48h validity
-- **Trust bundle** (`bundle.yaml`) -- distributes the root CA to control plane namespaces
-- **Webhook certificates** (`webhook.yaml`) -- short-lived certs (24h) for admission webhooks (policy-validator, proxy-injector, sp-validator)
+- **Trust bundle** (`bundle.yaml`) -- distributes the root CA to namespaces labeled `linkerd.io/is-control-plane: "true"`
+- **Webhook CA** (`webhook.yaml`) -- self-signed CA for admission webhooks
+- **Webhook certificates** (`webhook.yaml`) -- short-lived certs (24h) for policy-validator, proxy-injector, and sp-validator
+
+## Troubleshooting
+
+**linkerd-control-plane HelmRelease stuck in Failed state**
+
+If the control plane install times out (e.g. due to slow image pulls on first deploy), reset the retry counter:
+
+```bash
+flux suspend helmrelease linkerd-control-plane -n linkerd
+flux resume helmrelease linkerd-control-plane -n linkerd
+```
+
+**Pods stuck in Init or CrashLoopBackOff after trust bundle fix**
+
+If pods were created before the `linkerd-identity-trust-roots` ConfigMap existed, restart them:
+
+```bash
+kubectl rollout restart deployment -n linkerd linkerd-identity linkerd-destination linkerd-proxy-injector
+```
+
+**ExternalSecrets not syncing**
+
+Check that Vault has the secrets and the ClusterSecretStore is healthy:
+
+```bash
+kubectl get clustersecretstore vault-backend
+kubectl get externalsecrets --all-namespaces
+```
 
 ## Cleanup
 

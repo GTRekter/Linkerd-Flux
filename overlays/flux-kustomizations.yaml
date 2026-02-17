@@ -87,6 +87,7 @@ metadata:
   namespace: flux-system
 spec:
   interval: 10m0s
+  retryInterval: 2m0s
   path: ./overlays/linkerd-buoyant
   prune: true
   sourceRef:
@@ -112,7 +113,6 @@ spec:
     kind: GitRepository
     name: flux-system
   dependsOn:
-  - name: linkerd-buoyant
   - name: linkerd-certs
   - name: external-secrets-config
   wait: true
