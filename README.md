@@ -58,7 +58,6 @@ Vault runs inside the cluster in dev mode. The External Secrets Operator connect
 ```bash
 k3d cluster create linkerd \
   --k3s-arg "--disable=traefik@server:*" \
-  --k3s-arg "--node-taint=node-role.kubernetes.io/master:NoSchedule@server:*" \
   -p "80:80@loadbalancer"
 ```
 
