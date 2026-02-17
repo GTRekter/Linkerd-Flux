@@ -1,0 +1,100 @@
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: vault
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  path: ./overlays/vault
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  wait: true
+  timeout: 5m0s
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: external-secrets
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  path: ./overlays/external-secrets
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+  - name: vault
+  wait: true
+  timeout: 5m0s
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: external-secrets-config
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  path: ./overlays/external-secrets-config
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+  - name: external-secrets
+  wait: true
+  timeout: 5m0s
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: cert-manager
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  path: ./overlays/cert-manager
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  wait: true
+  timeout: 5m0s
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: linkerd-buoyant
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  path: ./overlays/linkerd-buoyant
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+  - name: cert-manager
+  - name: external-secrets-config
+  wait: true
+  timeout: 5m0s
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: linkerd
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  path: ./overlays/linkerd
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+  - name: linkerd-buoyant
+  - name: cert-manager
+  wait: true
+  timeout: 5m0s
