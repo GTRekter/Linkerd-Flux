@@ -38,7 +38,7 @@ spec:
       version: "2.19.0"
   interval: 15m0s
   dependsOn:
-  - name: linkerd-enterprise-crds
+  - name: linkerd-crds
     namespace: linkerd
   values:
     licenseSecret: buoyant-license
