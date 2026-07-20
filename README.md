@@ -119,7 +119,7 @@ Bootstrap Flux on the cluster:
 flux bootstrap github \
   --owner=GTRekter \
   --repository=Linkerd-Flux \
-  --branch=main \
+  --branch=simple \
   --path=./overlays \
   --personal
 ```

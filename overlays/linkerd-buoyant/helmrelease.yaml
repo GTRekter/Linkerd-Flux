@@ -40,12 +40,12 @@ spec:
     proxy:
       logLevel: "debug,linkerd=debug,hickory=error,linkerd_balancer=trace"
 ---
-apiVersion: helm.toolkit.fluxcd.io/v2
-kind: HelmRelease
-metadata:
-  name: linkerd-buoyant
-  namespace: linkerd-buoyant
-spec:
-  chart:
-    spec:
-      version: "0.40.2"
+# apiVersion: helm.toolkit.fluxcd.io/v2
+# kind: HelmRelease
+# metadata:
+#   name: linkerd-buoyant
+#   namespace: linkerd-buoyant
+# spec:
+#   chart:
+#     spec:
+#       version: "0.40.2"
