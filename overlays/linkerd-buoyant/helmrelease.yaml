@@ -2,7 +2,7 @@
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
-  name: linkerd-crds
+  name: linkerd-enterprise-crds
   namespace: linkerd
 spec:
   chart:
@@ -19,7 +19,7 @@ spec:
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
-  name: linkerd-control-plane
+  name: linkerd-enterprise-control-plane
   namespace: linkerd
 spec:
   chart:

@@ -24,7 +24,7 @@ flux-system (bootstrap)
 Ordering between the Helm charts is enforced with HelmRelease-level `dependsOn`:
 
 ```
-linkerd-crds → linkerd-control-plane
+linkerd-enterprise-crds → linkerd-enterprise-control-plane
 ```
 
 | Stage | Chart | Version |
@@ -104,24 +104,18 @@ kubectl create secret generic buoyant-license -n linkerd \
 
 ### 4. Bootstrap Flux
 
-Export your GitHub credentials:
-
-```bash
-export GITHUB_TOKEN=<YOUR_GITHUB_PAT>
-export GITHUB_USER=<YOUR_GITHUB_USERNAME>
-export GITHUB_REPO=<YOUR_REPO_NAME>
-```
-
 Bootstrap Flux on the cluster:
 
 ```bash
 flux bootstrap github \
-  --owner=$GITHUB_USER \
-  --repository=$GITHUB_REPO \
+  --owner=GTRekter \
+  --repository=Linkerd-Flux \
   --branch=main \
   --path=./overlays \
   --personal
 ```
+
+When prompted, paste your GitHub personal access token (or set it beforehand via the `GITHUB_TOKEN` environment variable).
 
 This installs Flux and configures it to reconcile the Kustomization defined in `overlays/flux-kustomizations.yaml`.
 
