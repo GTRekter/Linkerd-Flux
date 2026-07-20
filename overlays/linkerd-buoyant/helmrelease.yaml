@@ -5,7 +5,7 @@ metadata:
   name: linkerd-crds
   namespace: linkerd
 spec:
-  suspend: true
+  # suspend: true
   chart:
     spec:
       version: "2.19.0"
@@ -23,7 +23,7 @@ metadata:
   name: linkerd-control-plane
   namespace: linkerd
 spec:
-  suspend: true
+  # suspend: true
   chart:
     spec:
       chart: linkerd-enterprise-control-plane
