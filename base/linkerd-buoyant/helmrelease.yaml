@@ -76,7 +76,9 @@ spec:
       sourceRef:
         kind: HelmRepository
         name: linkerd-buoyant
-      version: "2.19.0"
+        namespace: linkerd
+      version: "0.40.2"
   interval: 15m0s
   values:
-    licenseSecret: buoyant-license 
+    buoyantCloudEnabled: false
+    licenseSecret: buoyant-license

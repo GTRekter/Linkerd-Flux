@@ -44,21 +44,6 @@ metadata:
   name: linkerd-buoyant
   namespace: linkerd-buoyant
 spec:
-  install:
-    createNamespace: false
-    remediation:
-      retries: -1
-  upgrade:
-    remediation:
-      retries: -1
   chart:
     spec:
-      chart: linkerd-buoyant
-      reconcileStrategy: ChartVersion
-      sourceRef:
-        kind: HelmRepository
-        name: linkerd-buoyant
-      version: "2.19.0"
-  interval: 15m0s
-  values:
-    licenseSecret: buoyant-license 
+      version: "0.40.2"
