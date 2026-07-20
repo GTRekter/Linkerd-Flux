@@ -37,3 +37,28 @@ spec:
       logLevel: debug
     proxy:
       logLevel: "debug,linkerd=debug,hickory=error,linkerd_balancer=trace"
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: linkerd-buoyant
+  namespace: linkerd-buoyant
+spec:
+  install:
+    createNamespace: false
+    remediation:
+      retries: -1
+  upgrade:
+    remediation:
+      retries: -1
+  chart:
+    spec:
+      chart: linkerd-buoyant
+      reconcileStrategy: ChartVersion
+      sourceRef:
+        kind: HelmRepository
+        name: linkerd-buoyant
+      version: "2.19.0"
+  interval: 15m0s
+  values:
+    licenseSecret: buoyant-license 
